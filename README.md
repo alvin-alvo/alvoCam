@@ -3,7 +3,7 @@
 # alvoCam
 ### SYSTEM: ONLINE // RETRO FUTURISM CAMERA MODULE
 
-[![Release](https://img.shields.io/github/v/release/alvin-alvo/alvoCam?style=for-the-badge&color=39FF14)](https://github.com/alvin-alvo/alvoCam/releases)
+[![Release](https://img.shields.io/github/v/release/alvin-alvo/alvoCam?style=for-the-badge&color=39FF14)]([https://github.com/alvin-alvo/alvoCam/releases](https://github.com/alvin-alvo/alvoCam/releases/))
 [![Platform](https://img.shields.io/badge/Platform-Android-050505?style=for-the-badge&logo=android)](https://www.android.com/)
 [![Built With](https://img.shields.io/badge/Built%20With-Flutter-050505?style=for-the-badge&logo=flutter)](https://flutter.dev/)
 [![License](https://img.shields.io/badge/License-GPLv3-amber?style=for-the-badge)](LICENSE)
@@ -34,7 +34,7 @@ Built for the **System Era**. No ads. No tracking. Just optics.
 * **Aesthetic:** High-contrast `Amber` and `Neon Green` on `Void Black`.
 
 ##  Installation (APK)
-1.  Go to the [Releases Page](https://github.com/alvin-alvo/alvoCam/releases).
+1.  Go to the [Releases Page]([https://github.com/alvin-alvo/alvoCam/releases](https://github.com/alvin-alvo/alvoCam/releases/)).
 2.  Download the latest `alvocam.apk`.
 3.  Install on any Android device (Android 10+ recommended).
 4.  *Note: You may need to "Allow apps from unknown sources" since this is a developer release.*
