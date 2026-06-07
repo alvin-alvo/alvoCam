@@ -1,8 +1,9 @@
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
-import '../core/alvo_theme.dart';
-import 'package:gal/gal.dart'; // New import for saving
+import 'package:gal/gal.dart';
+import 'settings_screen.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -11,176 +12,293 @@ class CameraScreen extends StatefulWidget {
   State<CameraScreen> createState() => _CameraScreenState();
 }
 
-class _CameraScreenState extends State<CameraScreen> {
+class _CameraScreenState extends State<CameraScreen>
+    with WidgetsBindingObserver, SingleTickerProviderStateMixin {
   CameraController? _controller;
+  List<CameraDescription> _cameras = [];
   bool _isCameraInitialized = false;
+  bool _isPermissionDenied = false;
+  int _selectedCameraIndex = 0;
+
+  // Animation for the shutter button
+  late AnimationController _shutterAnimationController;
+  late Animation<double> _shutterScaleAnimation;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
+
+    _shutterAnimationController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 150),
+    );
+    _shutterScaleAnimation = Tween<double>(begin: 1.0, end: 0.85).animate(
+      CurvedAnimation(
+        parent: _shutterAnimationController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
     _initializeCamera();
   }
 
   Future<void> _initializeCamera() async {
-    // 1. Request Permissions
-    var status = await Permission.camera.request();
-    if (status.isDenied) return; // We will handle this later
+    final status = await Permission.camera.request();
+    if (status.isDenied || status.isPermanentlyDenied) {
+      if (mounted) {
+        setState(() {
+          _isPermissionDenied = true;
+          _isCameraInitialized = false;
+        });
+      }
+      return;
+    }
 
-    // 2. Get Cameras
-    final cameras = await availableCameras();
-    if (cameras.isEmpty) return;
+    try {
+      _cameras = await availableCameras();
+      if (_cameras.isEmpty) return;
 
-    // 3. Select the first camera (Back Camera)
-    _controller = CameraController(
-      cameras[0],
-      ResolutionPreset.max, // Highest quality possible
-      enableAudio: false, // Crucial for photo-only apps
+      await _initCameraController(_cameras[_selectedCameraIndex]);
+    } catch (e) {
+      debugPrint("Camera error: $e");
+    }
+  }
+
+  Future<void> _initCameraController(CameraDescription cameraDescription) async {
+    final previousController = _controller;
+    
+    final newController = CameraController(
+      cameraDescription,
+      ResolutionPreset.max,
+      enableAudio: false,
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
 
-    // 4. Turn it on
+    _controller = newController;
+
     try {
-      await _controller!.initialize();
-      setState(() => _isCameraInitialized = true);
-    } catch (e) {
-      print("camera error: $e");
+      await newController.initialize();
+      if (mounted) {
+        setState(() {
+          _isCameraInitialized = true;
+          _isPermissionDenied = false;
+        });
+      }
+    } on CameraException catch (e) {
+      debugPrint("Camera Error: ${e.description}");
+    }
+
+    if (previousController != null) {
+      await previousController.dispose();
     }
   }
 
   @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final CameraController? cameraController = _controller;
+
+    // App state changed before we got the chance to initialize.
+    if (cameraController == null || !cameraController.value.isInitialized) {
+      return;
+    }
+
+    if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
+      // Free up memory when camera not active
+      cameraController.dispose();
+      if (mounted) {
+        setState(() {
+          _isCameraInitialized = false;
+        });
+      }
+    } else if (state == AppLifecycleState.resumed) {
+      // Reinitialize the camera with same properties
+      _initCameraController(cameraController.description);
+    }
+  }
+
+  Future<void> _takePicture() async {
+    if (_controller == null || !_controller!.value.isInitialized) return;
+
+    // Trigger Shutter Animation
+    await _shutterAnimationController.forward();
+    _shutterAnimationController.reverse();
+
+    try {
+      final image = await _controller!.takePicture();
+      await Gal.putImage(image.path);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Image saved to gallery"),
+            backgroundColor: Colors.white24,
+            duration: Duration(seconds: 1),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint("Error saving image: $e");
+    }
+  }
+
+  void _switchCamera() {
+    if (_cameras.length < 2) return;
+    
+    HapticFeedback.lightImpact();
+    
+    _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
+    _initCameraController(_cameras[_selectedCameraIndex]);
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     _controller?.dispose();
+    _shutterAnimationController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (!_isCameraInitialized || _controller == null) {
-      return const Scaffold(
-        backgroundColor: AlvoTheme.black,
-        body: Center(child: Text("initializing...", style: TextStyle(color: AlvoTheme.amber))),
-      );
+    if (_isPermissionDenied) {
+      return _buildPermissionScreen();
     }
 
     return Scaffold(
-      backgroundColor: AlvoTheme.black,
-      body: Stack(
-        fit: StackFit.expand, // 1. Forces the camera to fill the screen
-        children: [
-          // Layer 1: The Raw Camera Feed
-          CameraPreview(_controller!),
-
-          // Layer 2: The "Rule of Thirds" Grid
-          CustomPaint(painter: GridPainter()),
-
-          // Layer 3: Top Bar (Pinned to Top)
-          Positioned(
-            top: 0,
-            left: 0,
-            right: 0,
-            child: SafeArea(
-              child: Padding(
-                padding: const EdgeInsets.all(20.0),
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text("system: active", style: AlvoTheme.mono),
-                    const Icon(Icons.settings, color: AlvoTheme.green),
-                  ],
-                ),
+      backgroundColor: Colors.black,
+      body: SafeArea(
+        child: Column(
+          children: [
+            // Top Padding or Status Bar Area could go here
+            const SizedBox(height: 20),
+            
+            // Viewfinder (3:4 aspect ratio)
+            Expanded(
+              child: Center(
+                child: _isCameraInitialized && _controller != null
+                    ? AspectRatio(
+                        aspectRatio: 3 / 4,
+                        child: ClipRRect(
+                          borderRadius: BorderRadius.circular(16),
+                          child: CameraPreview(_controller!),
+                        ),
+                      )
+                    : const CircularProgressIndicator(color: Colors.white),
               ),
             ),
-          ),
 
-          // Layer 4: Shutter Button (Pinned to Bottom)
-          Positioned(
-            bottom: 40,
-            left: 0,
-            right: 0,
-            child: Center( // Centers the button horizontally
-              child: GestureDetector(
-                onTap: () async {
-                  if (!_controller!.value.isInitialized) return;
-                  try {
-                    // Capture
-                    final image = await _controller!.takePicture();
-                    // Save
-                    await Gal.putImage(image.path);
-                    // Notify
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text("image secured in gallery"),
-                          backgroundColor: AlvoTheme.green,
-                          duration: Duration(seconds: 1),
+            // Bottom Controls Area
+            Container(
+              height: 120,
+              padding: const EdgeInsets.symmetric(horizontal: 40),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // Settings Button
+                  IconButton(
+                    iconSize: 32,
+                    icon: const Icon(Icons.settings, color: Colors.white),
+                    onPressed: () {
+                      HapticFeedback.lightImpact();
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (context) => const SettingsScreen(),
                         ),
                       );
-                    }
-                  } catch (e) {
-                    print("Error saving: $e");
-                  }
-                },
-                child: Container(
-                  height: 80,
-                  width: 80,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    border: Border.all(color: AlvoTheme.amber, width: 3),
-                    color: Colors.black.withOpacity(0.3),
+                    },
                   ),
-                  child: Center(
-                    child: Container(
-                      height: 60,
-                      width: 60,
-                      decoration: BoxDecoration(
-                        color: AlvoTheme.amber.withOpacity(0.8),
-                        shape: BoxShape.circle,
-                      ),
+
+                  // Shutter Button
+                  GestureDetector(
+                    onTap: _takePicture,
+                    child: AnimatedBuilder(
+                      animation: _shutterScaleAnimation,
+                      builder: (context, child) {
+                        return Transform.scale(
+                          scale: _shutterScaleAnimation.value,
+                          child: Container(
+                            height: 80,
+                            width: 80,
+                            decoration: BoxDecoration(
+                              shape: BoxShape.circle,
+                              border: Border.all(color: Colors.white, width: 4),
+                              color: Colors.transparent,
+                            ),
+                            child: Center(
+                              child: Container(
+                                height: 64,
+                                width: 64,
+                                decoration: const BoxDecoration(
+                                  shape: BoxShape.circle,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                          ),
+                        );
+                      },
                     ),
                   ),
-                ),
+
+                  // Switch Camera Button
+                  IconButton(
+                    iconSize: 32,
+                    icon: const Icon(Icons.flip_camera_ios, color: Colors.white),
+                    onPressed: _cameras.length > 1 ? _switchCamera : null,
+                  ),
+                ],
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
-}
 
-// The "Cyber Grid" Painter
-class GridPainter extends CustomPainter {
-  @override
-  void paint(Canvas canvas, Size size) {
-    final paint = Paint()
-      ..color = Colors.white.withOpacity(0.15)
-      ..strokeWidth = 1;
-
-    // Draw Vertical Lines
-    canvas.drawLine(
-      Offset(size.width / 3, 0),
-      Offset(size.width / 3, size.height),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(2 * size.width / 3, 0),
-      Offset(2 * size.width / 3, size.height),
-      paint,
-    );
-
-    // Draw Horizontal Lines
-    canvas.drawLine(
-      Offset(0, size.height / 3),
-      Offset(size.width, size.height / 3),
-      paint,
-    );
-    canvas.drawLine(
-      Offset(0, 2 * size.height / 3),
-      Offset(size.width, 2 * size.height / 3),
-      paint,
+  Widget _buildPermissionScreen() {
+    return Scaffold(
+      backgroundColor: Colors.black,
+      body: Center(
+        child: Padding(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.camera_alt, size: 64, color: Colors.white),
+              const SizedBox(height: 24),
+              const Text(
+                "Camera Access Required",
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 24,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                "alvoCam needs access to your camera to take photos. Please grant permission in your device settings.",
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+              ),
+              const SizedBox(height: 32),
+              ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: Colors.black,
+                  padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                ),
+                onPressed: () async {
+                  await openAppSettings();
+                },
+                child: const Text("Open Settings"),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
-
-  @override
-  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }

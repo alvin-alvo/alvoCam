@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
-import 'core/alvo_theme.dart';
-import 'ui/camera_screen.dart'; // Import the new screen
+import 'ui/camera_screen.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
@@ -15,8 +14,21 @@ class AlvoCamApp extends StatelessWidget {
     return MaterialApp(
       title: 'alvocam',
       debugShowCheckedModeBanner: false,
-      theme: AlvoTheme.theme,
-      home: const CameraScreen(), // Switch to the camera view
+      theme: ThemeData(
+        useMaterial3: true,
+        scaffoldBackgroundColor: Colors.black,
+        colorScheme: const ColorScheme.dark(
+          surface: Colors.black,
+          primary: Colors.white,
+          onPrimary: Colors.black,
+        ),
+        iconTheme: const IconThemeData(color: Colors.white),
+        textTheme: const TextTheme(
+          bodyLarge: TextStyle(color: Colors.white),
+          bodyMedium: TextStyle(color: Colors.white),
+        ),
+      ),
+      home: const CameraScreen(),
     );
   }
 }
