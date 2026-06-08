@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:dynamic_color/dynamic_color.dart';
 import 'ui/camera_screen.dart';
+import 'core/settings_state.dart';
 
-void main() {
+void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  await SettingsState.initialize();
   runApp(const AlvoCamApp());
 }
 
@@ -11,24 +14,29 @@ class AlvoCamApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'alvocam',
-      debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        scaffoldBackgroundColor: Colors.black,
-        colorScheme: const ColorScheme.dark(
-          surface: Colors.black,
-          primary: Colors.white,
-          onPrimary: Colors.black,
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-        textTheme: const TextTheme(
-          bodyLarge: TextStyle(color: Colors.white),
-          bodyMedium: TextStyle(color: Colors.white),
-        ),
-      ),
-      home: const CameraScreen(),
+    return DynamicColorBuilder(
+      builder: (ColorScheme? lightDynamic, ColorScheme? darkDynamic) {
+        return MaterialApp(
+          title: 'alvocam',
+          debugShowCheckedModeBanner: false,
+          themeMode: ThemeMode.system,
+          theme: ThemeData(
+            useMaterial3: true,
+            colorScheme: lightDynamic ?? ColorScheme.fromSeed(
+              seedColor: Colors.amber, 
+              brightness: Brightness.light
+            ),
+          ),
+          darkTheme: ThemeData(
+            useMaterial3: true,
+            colorScheme: darkDynamic ?? ColorScheme.fromSeed(
+              seedColor: Colors.amber, 
+              brightness: Brightness.dark
+            ),
+          ),
+          home: const CameraScreen(),
+        );
+      },
     );
   }
 }

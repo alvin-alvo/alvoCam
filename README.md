@@ -1,7 +1,7 @@
 <div align="center">
 
 # alvoCam
-### Minimalist, Privacy-First Camera Module
+### Advanced, Privacy-First Camera Module
 
 [![Release](https://img.shields.io/github/v/release/alvin-alvo/alvoCam?style=for-the-badge&color=white)](https://github.com/alvin-alvo/alvoCam/releases/latest)
 [![Platform](https://img.shields.io/badge/Platform-Android-050505?style=for-the-badge&logo=android)](https://www.android.com/)
@@ -15,27 +15,30 @@
 ---
 
 ## Mission Statement
-**alvoCam** is a minimalist, privacy-focused camera application engineered for maximum reliability and a true black Material 3 aesthetic. It strips away modern computational photography bloat to focus on raw sensor data, framed perfectly in a 3:4 aspect ratio.
+**alvoCam** is a privacy-focused, minimalist camera application engineered for maximum reliability, hardware efficiency, and a deep integration with Android's Material You dynamic ecosystem. It strips away modern computational photography bloat to focus on capturing raw sensor data alongside optional, cleanly composited telemetry.
 
-Built with an emphasis on **bulletproof lifecycle management**. No ads. No background tracking. Just reliable optics.
+Built with an emphasis on **bulletproof lifecycle management** and **asynchronous queueing architecture**. No ads. No background tracking. Just reliable, professional optics.
 
 ## Tech Stack
 * **Core Engine:** Flutter & Dart
-* **Sensor Interface:** `camera` package (High-res capture)
+* **Sensor Interface:** `camera` package (Dynamic resolution up to Raw Sensor Max)
+* **Compositing Engine:** Dart Isolates (`compute`) & `image` package
+* **Telemetry Data:** `geolocator`, `geocoding`
 * **Storage Pipeline:** `gal` (Native gallery integration)
-* **Design Language:** True Black Material 3
+* **Design Language:** Material 3 Dynamic Colors (Wallpaper-adaptive)
 
 ## Core Features
-* **Zero-Lag Shutter:** Direct capture-to-disk pipeline with physical haptic and visual feedback.
-* **Resilient Architecture:** Implements strict `WidgetsBindingObserver` lifecycle states. Hardware resources are gracefully released when the app is backgrounded and re-acquired upon return, preventing locks or crashes.
-* **Privacy First:** Explicit runtime permission handling. No internet permissions required for operation.
-* **Aspect-Perfect Viewfinder:** The camera feed is strictly constrained to a 3:4 ratio to eliminate stretching across different hardware screen sizes.
-* **Minimalist HUD:** Clean, true black interface with crisp white iconography. No custom fonts, no unnecessary distractions.
+* **"Fire-and-Forget" Shutter Queue:** Taking a photo immediately captures the raw hardware sensor data and pushes the heavy processing to an asynchronous background queue matrix. The UI unblocks instantly, allowing you to rapid-fire photos without memory crashes or UI lag.
+* **Isolate-Powered Watermark Compositing:** When Geolocation is enabled, the app captures a massive 4.0 pixel-ratio UI overlay of your coordinates and seamlessly merges it onto the raw 4K sensor data in the background, retaining perfect 30% width scaling without degrading the camera's original resolution.
+* **Material You Integration:** The interface is fully devoid of hardcoded colors, adapting seamlessly to the user's system light/dark mode and active wallpaper theme via the `dynamic_color` package.
+* **Privacy-Respecting Map Telemetry:** Geolocation overlays fetch safe, open-source mapping tiles from OpenStreetMap (Mapnik) instead of tracking-heavy proprietary APIs.
+* **Hardware-Perfect Viewfinder:** The camera feed dynamically calculates its own constraints (`1 / aspectRatio`) to match the physical sensor, ensuring absolutely zero visual stretching or distortion regardless of the device screen size.
+* **Resilient Lifecycle Architecture:** Implements strict `WidgetsBindingObserver` lifecycle states. Hardware resources are gracefully released when the app is backgrounded and forcefully re-acquired upon return, neutralizing dead-thread crashes.
 
 ## Installation (APK)
 1.  Go to the [Latest Release](https://github.com/alvin-alvo/alvoCam/releases/latest).
 2.  Download `alvocam.apk` from the "Assets" section.
-3.  Install on any Android device (Android 10+ recommended).
+3.  Install on any Android device (Android 12+ recommended for Dynamic Colors).
 4.  *Note: You may need to "Allow apps from unknown sources" since this is a developer release.*
 
 ## Local Development Setup
