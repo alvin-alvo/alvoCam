@@ -1,16 +1,8 @@
 import 'package:flutter/material.dart';
+import '../core/settings_state.dart';
 
-class SettingsScreen extends StatefulWidget {
+class SettingsScreen extends StatelessWidget {
   const SettingsScreen({super.key});
-
-  @override
-  State<SettingsScreen> createState() => _SettingsScreenState();
-}
-
-class _SettingsScreenState extends State<SettingsScreen> {
-  // Mock states for settings
-  bool _saveGeolocation = false;
-  bool _showGridlines = true;
 
   @override
   Widget build(BuildContext context) {
@@ -24,36 +16,42 @@ class _SettingsScreenState extends State<SettingsScreen> {
       ),
       body: ListView(
         children: [
-          SwitchListTile(
-            title: const Text(
-              'Save Geolocation',
-              style: TextStyle(color: Colors.white),
-            ),
-            activeThumbColor: Colors.white,
-            activeTrackColor: Colors.grey.shade700,
-            inactiveThumbColor: Colors.grey,
-            inactiveTrackColor: Colors.grey.shade900,
-            value: _saveGeolocation,
-            onChanged: (bool value) {
-              setState(() {
-                _saveGeolocation = value;
-              });
+          ValueListenableBuilder<bool>(
+            valueListenable: SettingsState.saveGeolocation,
+            builder: (context, saveGeo, child) {
+              return SwitchListTile(
+                title: const Text(
+                  'Save Geolocation',
+                  style: TextStyle(color: Colors.white),
+                ),
+                activeThumbColor: Colors.white,
+                activeTrackColor: Colors.grey.shade700,
+                inactiveThumbColor: Colors.grey,
+                inactiveTrackColor: Colors.grey.shade900,
+                value: saveGeo,
+                onChanged: (bool value) {
+                  SettingsState.saveGeolocation.value = value;
+                },
+              );
             },
           ),
-          SwitchListTile(
-            title: const Text(
-              'Show Gridlines',
-              style: TextStyle(color: Colors.white),
-            ),
-            activeThumbColor: Colors.white,
-            activeTrackColor: Colors.grey.shade700,
-            inactiveThumbColor: Colors.grey,
-            inactiveTrackColor: Colors.grey.shade900,
-            value: _showGridlines,
-            onChanged: (bool value) {
-              setState(() {
-                _showGridlines = value;
-              });
+          ValueListenableBuilder<bool>(
+            valueListenable: SettingsState.showGridlines,
+            builder: (context, showGrid, child) {
+              return SwitchListTile(
+                title: const Text(
+                  'Show Gridlines',
+                  style: TextStyle(color: Colors.white),
+                ),
+                activeThumbColor: Colors.white,
+                activeTrackColor: Colors.grey.shade700,
+                inactiveThumbColor: Colors.grey,
+                inactiveTrackColor: Colors.grey.shade900,
+                value: showGrid,
+                onChanged: (bool value) {
+                  SettingsState.showGridlines.value = value;
+                },
+              );
             },
           ),
           const Divider(color: Colors.white24),
@@ -72,10 +70,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
               'Built by : alvoLabs',
               style: TextStyle(color: Colors.white),
             ),
-            trailing: const Icon(Icons.code, color: Colors.white), // Standard Material Icon as placeholder for GitHub
-            onTap: () {
-              // Open GitHub link functionality here
-            },
+            trailing: const Icon(Icons.code, color: Colors.white),
+            onTap: () {},
           ),
         ],
       ),

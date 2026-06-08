@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:gal/gal.dart';
 import 'settings_screen.dart';
+import '../core/settings_state.dart';
 
 class CameraScreen extends StatefulWidget {
   const CameraScreen({super.key});
@@ -19,8 +20,10 @@ class _CameraScreenState extends State<CameraScreen>
   bool _isCameraInitialized = false;
   bool _isPermissionDenied = false;
   int _selectedCameraIndex = 0;
+  
+  // Guard flag for rapid captures
+  bool _isCapturing = false;
 
-  // Animation for the shutter button
   late AnimationController _shutterAnimationController;
   late Animation<double> _shutterScaleAnimation;
 
@@ -66,8 +69,13 @@ class _CameraScreenState extends State<CameraScreen>
   }
 
   Future<void> _initCameraController(CameraDescription cameraDescription) async {
-    final previousController = _controller;
-    
+    // 1. Sequential Switching: Fully unawait and dispose of the existing controller
+    if (_controller != null) {
+      await _controller?.dispose();
+      _controller = null;
+    }
+
+    // 2. Initialize the new controller
     final newController = CameraController(
       cameraDescription,
       ResolutionPreset.max,
@@ -75,10 +83,10 @@ class _CameraScreenState extends State<CameraScreen>
       imageFormatGroup: ImageFormatGroup.jpeg,
     );
 
-    _controller = newController;
-
     try {
       await newController.initialize();
+      _controller = newController;
+      
       if (mounted) {
         setState(() {
           _isCameraInitialized = true;
@@ -88,43 +96,46 @@ class _CameraScreenState extends State<CameraScreen>
     } on CameraException catch (e) {
       debugPrint("Camera Error: ${e.description}");
     }
-
-    if (previousController != null) {
-      await previousController.dispose();
-    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final CameraController? cameraController = _controller;
 
-    // App state changed before we got the chance to initialize.
     if (cameraController == null || !cameraController.value.isInitialized) {
       return;
     }
 
     if (state == AppLifecycleState.inactive || state == AppLifecycleState.paused) {
-      // Free up memory when camera not active
+      // Free up memory and hardware locks when the camera is not active
       cameraController.dispose();
+      _controller = null;
       if (mounted) {
         setState(() {
           _isCameraInitialized = false;
         });
       }
     } else if (state == AppLifecycleState.resumed) {
-      // Reinitialize the camera with same properties
+      // Reinitialize the camera carefully
       _initCameraController(cameraController.description);
     }
   }
 
   Future<void> _takePicture() async {
-    if (_controller == null || !_controller!.value.isInitialized) return;
+    // Shutter Lock: Prevent multiple rapid taps
+    if (_isCapturing || _controller == null || !_controller!.value.isInitialized) {
+      return;
+    }
 
-    // Trigger Shutter Animation
-    await _shutterAnimationController.forward();
-    _shutterAnimationController.reverse();
+    setState(() {
+      _isCapturing = true;
+    });
 
     try {
+      // Trigger Shutter Animation
+      await _shutterAnimationController.forward();
+      _shutterAnimationController.reverse();
+
       final image = await _controller!.takePicture();
       await Gal.putImage(image.path);
 
@@ -139,16 +150,27 @@ class _CameraScreenState extends State<CameraScreen>
       }
     } catch (e) {
       debugPrint("Error saving image: $e");
+    } finally {
+      // Always unlock the shutter, even if capture fails
+      if (mounted) {
+        setState(() {
+          _isCapturing = false;
+        });
+      }
     }
   }
 
-  void _switchCamera() {
-    if (_cameras.length < 2) return;
+  Future<void> _switchCamera() async {
+    if (_cameras.length < 2 || _isCapturing) return;
     
     HapticFeedback.lightImpact();
     
+    setState(() {
+      _isCameraInitialized = false; // Show loading indicator during switch
+    });
+    
     _selectedCameraIndex = (_selectedCameraIndex + 1) % _cameras.length;
-    _initCameraController(_cameras[_selectedCameraIndex]);
+    await _initCameraController(_cameras[_selectedCameraIndex]);
   }
 
   @override
@@ -170,7 +192,6 @@ class _CameraScreenState extends State<CameraScreen>
       body: SafeArea(
         child: Column(
           children: [
-            // Top Padding or Status Bar Area could go here
             const SizedBox(height: 20),
             
             // Viewfinder (3:4 aspect ratio)
@@ -179,9 +200,24 @@ class _CameraScreenState extends State<CameraScreen>
                 child: _isCameraInitialized && _controller != null
                     ? AspectRatio(
                         aspectRatio: 3 / 4,
-                        child: ClipRRect(
-                          borderRadius: BorderRadius.circular(16),
-                          child: CameraPreview(_controller!),
+                        child: Stack(
+                          fit: StackFit.expand,
+                          children: [
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: CameraPreview(_controller!),
+                            ),
+                            // Settings Integration: Dynamically show/hide gridlines
+                            ValueListenableBuilder<bool>(
+                              valueListenable: SettingsState.showGridlines,
+                              builder: (context, showGrid, child) {
+                                if (!showGrid) return const SizedBox.shrink();
+                                return CustomPaint(
+                                  painter: GridPainter(),
+                                );
+                              },
+                            ),
+                          ],
                         ),
                       )
                     : const CircularProgressIndicator(color: Colors.white),
@@ -224,16 +260,19 @@ class _CameraScreenState extends State<CameraScreen>
                             width: 80,
                             decoration: BoxDecoration(
                               shape: BoxShape.circle,
-                              border: Border.all(color: Colors.white, width: 4),
+                              border: Border.all(
+                                color: _isCapturing ? Colors.white38 : Colors.white, 
+                                width: 4
+                              ),
                               color: Colors.transparent,
                             ),
                             child: Center(
                               child: Container(
                                 height: 64,
                                 width: 64,
-                                decoration: const BoxDecoration(
+                                decoration: BoxDecoration(
                                   shape: BoxShape.circle,
-                                  color: Colors.white,
+                                  color: _isCapturing ? Colors.white38 : Colors.white,
                                 ),
                               ),
                             ),
@@ -301,4 +340,41 @@ class _CameraScreenState extends State<CameraScreen>
       ),
     );
   }
+}
+
+// Custom Painter for the Rule of Thirds Grid
+class GridPainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = Colors.white.withValues(alpha: 0.3)
+      ..strokeWidth = 1;
+
+    // Draw Vertical Lines
+    canvas.drawLine(
+      Offset(size.width / 3, 0),
+      Offset(size.width / 3, size.height),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(2 * size.width / 3, 0),
+      Offset(2 * size.width / 3, size.height),
+      paint,
+    );
+
+    // Draw Horizontal Lines
+    canvas.drawLine(
+      Offset(0, size.height / 3),
+      Offset(size.width, size.height / 3),
+      paint,
+    );
+    canvas.drawLine(
+      Offset(0, 2 * size.height / 3),
+      Offset(size.width, 2 * size.height / 3),
+      paint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(CustomPainter oldDelegate) => false;
 }
