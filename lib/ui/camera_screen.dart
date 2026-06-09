@@ -27,17 +27,30 @@ Future<Uint8List> _compositeImageIsolate(Map<String, dynamic> params) async {
   if (rawImage == null) throw Exception("Failed to decode raw high-res image");
   
   if (watermark != null) {
-    // Dynamically scale the watermark to occupy exactly 30% of the raw image width
-    int targetWatermarkWidth = (rawImage.width * 0.30).toInt();
-    watermark = img.copyResize(watermark, width: targetWatermarkWidth);
+    const int masterWidth = 1080;
 
-    // Calculate precise coordinates to snap the watermark to the bottom left
-    int padding = (rawImage.width * 0.02).toInt(); // 2% dynamic padding
-    int dstX = padding;
-    int dstY = rawImage.height - watermark.height - padding;
+    // Scale raw image to masterWidth
+    if (rawImage.width < masterWidth) {
+      // Scale up low-res using nearest neighbor to preserve retro pixels
+      rawImage = img.copyResize(rawImage, width: masterWidth, interpolation: img.Interpolation.nearest);
+    } else if (rawImage.width > masterWidth) {
+      // Scale down high-res
+      rawImage = img.copyResize(rawImage, width: masterWidth, interpolation: img.Interpolation.linear);
+    }
 
-    // Overlay the scaled watermark cleanly onto the high-res frame
-    img.compositeImage(rawImage, watermark, dstX: dstX, dstY: dstY);
+    // Scale watermark strip to exactly match masterWidth
+    watermark = img.copyResize(watermark, width: masterWidth, interpolation: img.Interpolation.linear);
+
+    // Create the master canvas: camera image + watermark strip below it
+    int masterHeight = rawImage.height + watermark.height;
+    img.Image canvas = img.Image(width: masterWidth, height: masterHeight);
+
+    // Paste the raw image at the top (0, 0)
+    img.compositeImage(canvas, rawImage, dstX: 0, dstY: 0);
+    // Paste the solid white watermark strip at the bottom
+    img.compositeImage(canvas, watermark, dstX: 0, dstY: rawImage.height);
+
+    return Uint8List.fromList(img.encodeJpg(canvas, quality: 100));
   }
 
   // Re-encode and return the pristine JPG bytes
@@ -425,30 +438,35 @@ class _CameraScreenState extends State<CameraScreen>
                         child: Stack(
                           fit: StackFit.expand,
                           children: [
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(16),
-                              child: CameraPreview(_controller!),
-                            ),
-                            ValueListenableBuilder<bool>(
-                              valueListenable: SettingsState.showGridlines,
-                              builder: (context, showGrid, child) {
-                                if (!showGrid) return const SizedBox.shrink();
-                                return CustomPaint(
-                                  painter: GridPainter(color: colorScheme.onSurface),
-                                );
-                              },
-                            ),
-                            
-                            // Geolocation Overlay Target
+                            // Geolocation Overlay Target (Hidden behind preview for clean capture)
                             if (SettingsState.saveGeolocation.value && _currentPosition != null)
                               Positioned(
-                                bottom: 16,
-                                left: 16,
+                                top: 0,
+                                left: 0,
+                                right: 0,
                                 child: RepaintBoundary(
                                   key: _watermarkKey,
                                   child: _buildWatermarkOverlay(),
                                 ),
                               ),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(16),
+                              child: Container(
+                                color: Colors.black, // Block watermark from bleeding through corners
+                                child: CameraPreview(_controller!),
+                              ),
+                            ),
+                            ValueListenableBuilder<bool>(
+                              valueListenable: SettingsState.showGridlines,
+                              builder: (context, showGrid, child) {
+                                if (!showGrid) return const SizedBox.shrink();
+                                return IgnorePointer(
+                                  child: CustomPaint(
+                                    painter: GridPainter(color: Colors.white.withValues(alpha: 0.5)),
+                                  ),
+                                );
+                              },
+                            ),
                           ],
                         ),
                       )
@@ -526,67 +544,86 @@ class _CameraScreenState extends State<CameraScreen>
     final String address = _currentPlacemark != null 
       ? "${_currentPlacemark!.subLocality}, ${_currentPlacemark!.locality}" 
       : "Acquiring satellites...";
-    final String coordinates = _currentPosition != null 
-      ? "LAT: ${_currentPosition!.latitude.toStringAsFixed(5)}  LON: ${_currentPosition!.longitude.toStringAsFixed(5)}"
-      : "";
-    final String dateTime = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
-
     final lat = _currentPosition?.latitude ?? 0.0;
     final lon = _currentPosition?.longitude ?? 0.0;
-    final mapUrl = "https://staticmap.openstreetmap.de/staticmap.php?center=$lat,$lon&zoom=15&size=200x200&maptype=mapnik&markers=$lat,$lon,red-pushpin";
+    final String dateTime = DateFormat('yyyy-MM-dd HH:mm:ss').format(DateTime.now());
+
+    final mapUrl = "https://maps.googleapis.com/maps/api/staticmap?center=$lat,$lon&zoom=15&size=200x200&key=YOUR_API_KEY_HERE";
 
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      decoration: BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.75),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: Colors.white.withValues(alpha: 0.2), width: 1),
-      ),
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 24),
+      color: Colors.white,
       child: Row(
         mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.center,
         children: [
           ClipRRect(
             borderRadius: BorderRadius.circular(8),
             child: _currentPosition != null 
                 ? Image.network(
                     mapUrl,
-                    width: 48,
-                    height: 48,
+                    width: 72,
+                    height: 72,
                     fit: BoxFit.cover,
                     loadingBuilder: (context, child, loadingProgress) {
                       if (loadingProgress == null) return child;
-                      return const SizedBox(
-                        width: 48,
-                        height: 48,
-                        child: Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.amber)),
+                      return Container(
+                        width: 72,
+                        height: 72,
+                        color: Colors.grey.shade200,
+                        child: const Center(child: CircularProgressIndicator(strokeWidth: 2, color: Colors.black)),
                       );
                     },
                     errorBuilder: (context, error, stackTrace) {
-                      return Icon(Icons.satellite_alt, color: Colors.amber.shade400, size: 36);
+                      return Container(
+                        width: 72,
+                        height: 72,
+                        color: Colors.grey.shade300,
+                        child: const Center(
+                          child: Text(
+                            "Map\nUnavailable",
+                            textAlign: TextAlign.center,
+                            style: TextStyle(color: Colors.black54, fontSize: 10, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      );
                     },
                   )
-                : Icon(Icons.satellite_alt, color: Colors.amber.shade400, size: 36),
+                : Container(
+                    width: 72,
+                    height: 72,
+                    color: Colors.grey.shade300,
+                    child: const Icon(Icons.satellite_alt, color: Colors.black54, size: 36),
+                  ),
           ),
-          const SizedBox(width: 12),
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Text(
-                address,
-                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold, fontSize: 14),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                coordinates,
-                style: const TextStyle(color: Colors.white70, fontSize: 11, fontFamily: 'monospace'),
-              ),
-              const SizedBox(height: 2),
-              Text(
-                dateTime,
-                style: const TextStyle(color: Colors.white54, fontSize: 10, fontFamily: 'monospace'),
-              ),
-            ],
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Text(
+                  address,
+                  style: const TextStyle(color: Colors.black87, fontWeight: FontWeight.bold, fontSize: 16, fontFamily: 'sans-serif'),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  "LAT: $lat",
+                  style: const TextStyle(color: Colors.black54, fontSize: 13, fontFamily: 'sans-serif', fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  "LON: $lon",
+                  style: const TextStyle(color: Colors.black54, fontSize: 13, fontFamily: 'sans-serif', fontWeight: FontWeight.w500),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  dateTime,
+                  style: const TextStyle(color: Colors.black38, fontSize: 12, fontFamily: 'sans-serif', fontWeight: FontWeight.bold),
+                ),
+              ],
+            ),
           ),
         ],
       ),
@@ -648,8 +685,8 @@ class GridPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()
-      ..color = color.withValues(alpha: 0.3)
-      ..strokeWidth = 1;
+      ..color = color
+      ..strokeWidth = 1.5;
 
     canvas.drawLine(
       Offset(size.width / 3, 0),

@@ -19,7 +19,10 @@ class SettingsScreen extends StatelessWidget {
   Future<void> _launchGitHub() async {
     final url = Uri.parse('https://github.com/alvin-alvo/alvoCam');
     if (await canLaunchUrl(url)) {
-      await launchUrl(url);
+      await launchUrl(url, mode: LaunchMode.externalApplication);
+    } else {
+      // Fallback if canLaunchUrl fails
+      await launchUrl(url, mode: LaunchMode.externalApplication);
     }
   }
 
